@@ -1,3 +1,4 @@
 User-agent: *
 Disallow: /pub/site/*
 Disallow: /preview/*
+Sitemap: https://astapchik-shakirina.vercel.app/sitemap.xml
