@@ -1,11 +1,11 @@
-﻿(() => {
+﻿?(() => {
   const DEFAULT = "ru";
   const SUPPORTED = ["ru","en","pl","fr"];
   const STORAGE_KEY = "lang";
   const cache = {};
 
   async function loadDict(lang) {
-    if (lang === "ru") return {}; // русская версия — базовая
+    if (lang === "ru") return {}; // ������� ������ � �������
     if (cache[lang]) return cache[lang];
     try {
       const res = await fetch(`/assets/i18n/${lang}.json`, { cache: "no-store" });
@@ -34,13 +34,13 @@
     const dict = await loadDict(lang);
     document.documentElement.setAttribute("lang", lang);
 
-    // 1) Явная разметка: [data-i18n="усская фраза"]
+    // 1) ����� ��������: [data-i18n="������ �����"]
     document.querySelectorAll("[data-i18n]").forEach(el => {
       const key = el.getAttribute("data-i18n");
       if (key && dict[key]) el.textContent = dict[key];
     });
 
-    // 2) лейсхолдеры / title
+    // 2) ����������� / title
     ["placeholder","title","aria-label"].forEach(attr => {
       document.querySelectorAll(`[${attr}]`).forEach(el => {
         const key = el.getAttribute(attr);
@@ -48,7 +48,7 @@
       });
     });
 
-    // 3) Текстовые узлы: заменяем только если полный тримнутый текст = ключу
+    // 3) ��������� ����: �������� ������ ���� ������ ��������� ����� = �����
     walkTextNodes(document.body, node => {
       const raw = node.nodeValue;
       const key = raw.trim();
