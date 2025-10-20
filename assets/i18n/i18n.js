@@ -1,58 +1,81 @@
-﻿(function(){
-  const SUPPORTED = ["ru","en","es","fr","pt"];
-  const guess = () => {
-    const l = (localStorage.getItem("lang") || navigator.language || "ru").slice(0,2).toLowerCase();
-    return SUPPORTED.includes(l) ? l : "ru";
-  };
-  const lang = guess();
-  document.documentElement.setAttribute("lang", lang);
+﻿(() => {
+  const DEFAULT = "ru";
+  const SUPPORTED = ["ru","en","pl","fr"];
+  const STORAGE_KEY = "lang";
+  const cache = {};
 
-  // UI: селект в правом верхнем углу
-  const ui = document.createElement("div");
-  ui.id = "lang-switcher";
-  ui.style.position = "fixed";
-  ui.style.top = "12px";
-  ui.style.right = "12px";
-  ui.style.zIndex = 9999;
-  ui.style.background = "rgba(255,255,255,.9)";
-  ui.style.backdropFilter = "blur(4px)";
-  ui.style.border = "1px solid #e5e7eb";
-  ui.style.borderRadius = "8px";
-  ui.style.padding = "4px 8px";
-  const sel = document.createElement("select");
-  [["ru","RU"],["en","EN"],["es","ES"],["fr","FR"],["pt","PT"]].forEach(([v,l])=>{
-    const o=document.createElement("option"); o.value=v; o.textContent=l; sel.appendChild(o);
-  });
-  sel.value = lang;
-  sel.onchange = (e)=>{ localStorage.setItem("lang", e.target.value); location.reload(); };
-  ui.appendChild(sel);
-  document.body.appendChild(ui);
+  async function loadDict(lang) {
+    if (lang === "ru") return {}; // русская версия — базовая
+    if (cache[lang]) return cache[lang];
+    try {
+      const res = await fetch(`/assets/i18n/${lang}.json`, { cache: "no-store" });
+      if (!res.ok) return {};
+      cache[lang] = await res.json();
+      return cache[lang];
+    } catch (_) { return {}; }
+  }
 
-  // агрузка словаря (кроме RU — он базовый)
-  if(lang === "ru") return;
-
-  fetch("/assets/i18n/"+lang+".json")
-    .then(r=>r.json())
-    .then(tr=>{
-      // рямая замена по точным RU-строкам (без разметки)
-      const walk = (node) => {
-        if(!node || node.nodeType===8) return;                // комментарии — пропускаем
-        if(node.nodeType===1){                                // элемент
-          if(["SCRIPT","STYLE","NOSCRIPT"].includes(node.tagName)) return;
-          // атрибуты-плейсхолдеры
-          ["placeholder","title","aria-label"].forEach(a=>{
-            const v=node.getAttribute && node.getAttribute(a);
-            if(v && tr[v]) node.setAttribute(a, tr[v]);
-          });
-          Array.from(node.childNodes).forEach(walk);
-        } else if(node.nodeType===3){                         // текстовый
-          const txt = node.nodeValue.trim();
-          if(tr[txt]){
-            node.nodeValue = node.nodeValue.replace(txt, tr[txt]);
-          }
+  function walkTextNodes(root, cb) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+        const t = n.nodeValue.trim();
+        if (!t) return NodeFilter.FILTER_REJECT;
+        if (n.parentElement && ["SCRIPT","STYLE","NOSCRIPT"].includes(n.parentElement.tagName)) {
+          return NodeFilter.FILTER_REJECT;
         }
-      };
-      walk(document.body);
-    })
-    .catch(()=>{ /* ignore */ });
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let node; while ((node = walker.nextNode())) cb(node);
+  }
+
+  async function applyLang(lang) {
+    const dict = await loadDict(lang);
+    document.documentElement.setAttribute("lang", lang);
+
+    // 1) Явная разметка: [data-i18n="усская фраза"]
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+      const key = el.getAttribute("data-i18n");
+      if (key && dict[key]) el.textContent = dict[key];
+    });
+
+    // 2) лейсхолдеры / title
+    ["placeholder","title","aria-label"].forEach(attr => {
+      document.querySelectorAll(`[${attr}]`).forEach(el => {
+        const key = el.getAttribute(attr);
+        if (key && dict[key]) el.setAttribute(attr, dict[key]);
+      });
+    });
+
+    // 3) Текстовые узлы: заменяем только если полный тримнутый текст = ключу
+    walkTextNodes(document.body, node => {
+      const raw = node.nodeValue;
+      const key = raw.trim();
+      if (dict[key]) {
+        const leading = raw.match(/^\s*/)[0] ?? "";
+        const trailing = raw.match(/\s*$/)[0] ?? "";
+        node.nodeValue = leading + dict[key] + trailing;
+      }
+    });
+  }
+
+  function initSwitcher() {
+    const sw = document.getElementById("lang-switcher");
+    if (!sw) return;
+    const guess = (navigator.language || "ru").slice(0,2).toLowerCase();
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const current = SUPPORTED.includes(saved || "") ? saved
+                   : SUPPORTED.includes(guess) ? guess
+                   : DEFAULT;
+    sw.value = current;
+    applyLang(current);
+    sw.addEventListener("change", e => {
+      const lang = e.target.value;
+      localStorage.setItem(STORAGE_KEY, lang);
+      applyLang(lang);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", initSwitcher);
 })();
