@@ -1,0 +1,10 @@
+{
+  "name": "astapchik-shakirina",
+  "private": true,
+  "version": "0.0.2",
+  "description": "Static site + serverless CMS (vetka2)",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
+  "dependencies": { "@vercel/kv": "^1.0.0" }
+}
