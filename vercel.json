@@ -1,6 +1,12 @@
 {
-  "functions": { "api/*.js": { "runtime": "nodejs18.x" } },
+  "version": 2,
+  "functions": {
+    "api/**/*.js": { "runtime": "nodejs18.x" }
+  },
   "headers": [
-    { "source": "/api/(.*)", "headers": [ { "key":"Cache-Control","value":"no-store" } ] }
+    {
+      "source": "/api/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    }
   ]
 }
