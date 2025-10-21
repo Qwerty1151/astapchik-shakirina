@@ -1,0 +1,137 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>едактор сайта (vetka2)</title>
+  <style>
+    :root{--bg:#0b1220;--panel:#131c2c;--fg:#e7ecf5;--acc:#3b82f6;--mut:#9fb0c3}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial}
+    .bar{position:fixed;inset:0 0 auto 0;height:56px;display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);box-shadow:0 2px 10px rgba(0,0,0,.3);z-index:9}
+    .bar .pill{background:#0f172a;border:1px solid #22304a;color:var(--fg);border-radius:10px;padding:6px 10px}
+    button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:8px 14px;cursor:pointer}
+    button.muted{background:#22304a}
+    #status{margin-left:auto;color:var(--mut)}
+    iframe{position:absolute;inset:56px 0 0 0;width:100%;height:calc(100% - 56px);border:0;background:#fff}
+    .hint{color:var(--mut);margin-left:4px}
+    .editing *:hover{outline:1px dashed rgba(59,130,246,.6);outline-offset:2px}
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <strong>дмин  vetka2</strong>
+    <input id="secret" class="pill" type="password" placeholder="ADMIN_SECRET" style="min-width:220px">
+    <button id="set" class="muted">OK</button>
+    <button id="edit">ежим правки</button>
+    <button id="save">Сохранить</button>
+    <span class="hint"> редактируй текст прямо на странице. лик по картинке  выбрать файл.</span>
+    <span id="status"></span>
+  </div>
+  <iframe id="frame" src="../index.html"></iframe>
+  <input id="uploader" type="file" accept="image/*" style="display:none">
+
+<script>
+(function(){
+  const frame = document.getElementById('frame');
+  const secret = document.getElementById('secret');
+  const setBtn = document.getElementById('set');
+  const saveBtn = document.getElementById('save');
+  const editBtn = document.getElementById('edit');
+  const uploader = document.getElementById('uploader');
+  const status = document.getElementById('status');
+
+  secret.value = localStorage.getItem('ADMIN_SECRET') || '';
+
+  function setStatus(t){ status.textContent = t }
+
+  frame.addEventListener('load', () => {
+    setStatus('готово');
+    const doc = frame.contentDocument;
+
+    let editing = false;
+    function toggleEdit(){
+      editing = !editing;
+      if(editing){
+        doc.body.contentEditable = 'true';
+        doc.documentElement.classList.add('editing');
+        editBtn.textContent = 'ыйти из правки';
+      }else{
+        doc.body.contentEditable = 'false';
+        doc.documentElement.classList.remove('editing');
+        editBtn.textContent = 'ежим правки';
+      }
+    }
+
+    // одмена картинок
+    doc.addEventListener('click', (e)=>{
+      if(!editing) return;
+      const t = e.target;
+      if(t && t.tagName === 'IMG'){
+        uploader.onchange = async () => {
+          const file = uploader.files[0]; if(!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            t.src = reader.result;             // временно data:URL
+            t.setAttribute('data-filename', file.name);
+            setStatus('картинка подменена (локально), не забывай Сохранить');
+          };
+          reader.readAsDataURL(file);
+          uploader.value = '';
+        };
+        uploader.click();
+      }
+    });
+
+    editBtn.onclick = toggleEdit;
+
+    setBtn.onclick = ()=>{
+      localStorage.setItem('ADMIN_SECRET', secret.value.trim());
+      setStatus('секрет сохранён локально');
+    };
+
+    saveBtn.onclick = async ()=>{
+      try{
+        setStatus('сохранение');
+
+        // 1) выгрузить все data:URL картинки в репозиторий
+        const imgs = Array.from(doc.images).filter(img=>/^data:/i.test(img.src));
+        for(const img of imgs){
+          const filename = img.getAttribute('data-filename') || 'image.png';
+          const payload = { filename, dataUrl: img.src };
+          const r = await fetch('/api/upload', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','x-admin-secret': (localStorage.getItem('ADMIN_SECRET')||'').trim()},
+            body: JSON.stringify(payload)
+          });
+          const j = await r.json();
+          if(!r.ok){ throw new Error('upload failed: '+JSON.stringify(j)); }
+          img.src = j.url; // /uploads/....
+        }
+
+        // 2) собрать итоговый HTML
+        // добавим <!doctype html> если его не было
+        const html = '<!doctype html>\n' + doc.documentElement.outerHTML;
+
+        // 3) сохранить в git (ветка vetka2)
+        const resp = await fetch('/api/save', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','x-admin-secret': (localStorage.getItem('ADMIN_SECRET')||'').trim()},
+          body: JSON.stringify({ path:'index.html', content: html, message:'cms: update via /admin' })
+        });
+        const data = await resp.json();
+        if(!resp.ok){ throw new Error(JSON.stringify(data)); }
+        setStatus('сохранено  (коммит '+(data.commit||'')+')  Vercel пересоберёт превью');
+
+        // подстраховочно подсветим, что правка выключена
+        if(editing) toggleEdit();
+      }catch(err){
+        console.error(err);
+        setStatus('ошибка: '+err.message);
+      }
+    };
+  });
+})();
+</script>
+</body>
+</html>
