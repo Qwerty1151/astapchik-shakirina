@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CMS Admin (vetka2)</title>
+  <style>
+    body{font:14px/1.4 system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:1100px;margin:32px auto;padding:0 16px;}
+    .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+    input,button{padding:8px 12px;font:inherit}
+    .token{min-width:320px}
+    .hint{opacity:.7}
+    #editor{border:1px solid #ccc;min-height:60vh;padding:16px;border-radius:10px;outline:none;background:#fff}
+    .row{display:flex;gap:12px;align-items:center}
+    .ok{color:#17831b}.err{color:#b00020}
+  </style>
+</head>
+<body>
+  <h1>CMS Admin (vetka2)</h1>
+  <p class="hint">This editor saves HTML content of <code>#cms-root</code> on the homepage.</p>
+
+  <div class="bar">
+    <div class="row">
+      <label>Admin token:</label>
+      <input id="token" class="token" type="password" placeholder="paste CMS_ADMIN_TOKEN" />
+      <button id="remember">Remember</button>
+    </div>
+    <div class="row">
+      <button id="load">Load</button>
+      <button id="save">Save</button>
+      <button id="clear">Clear</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div id="editor" contenteditable="true"></div>
+
+  <script>
+  const key = "cms:page:index";
+  const $ = (s) => document.querySelector(s);
+  const msg = (t, ok=true) => { const m=$("#msg"); m.textContent=t; m.className = ok? "ok" : "err"; };
+
+  function getToken() {
+    return $("#token").value || localStorage.getItem("cmsToken") || "";
+  }
+  $("#remember").onclick = () => {
+    if ($("#token").value) localStorage.setItem("cmsToken", $("#token").value);
+    msg("token saved");
+  };
+
+  async function loadKV() {
+    const r = await fetch("/api/content-get?key="+encodeURIComponent(key), { cache:"no-store" });
+    const j = await r.json();
+    return j && j.value || "";
+  }
+  async function loadDefaultFromIndex() {
+    const t = await (await fetch("/index.html", { cache:"no-store" })).text();
+    const m = t.match(/<div[^>]+id=["']cms-root["'][^>]*>([\s\S]*?)<\/div>/i);
+    return m ? m[1] : "";
+  }
+
+  $("#load").onclick = async () => {
+    try {
+      let html = await loadKV();
+      if (!html) html = await loadDefaultFromIndex();
+      $("#editor").innerHTML = html || "";
+      msg("loaded");
+    } catch(e){ console.error(e); msg("load error", false); }
+  };
+
+  $("#save").onclick = async () => {
+    try {
+      const token = getToken();
+      if (!token) { msg("enter admin token", false); return; }
+      const html = $("#editor").innerHTML;
+      const r = await fetch("/api/content-set", {
+        method:"POST",
+        headers: { "Content-Type":"application/json", "x-admin-token": token },
+        body: JSON.stringify({ key, value: html })
+      });
+      const j = await r.json();
+      if (j && j.ok) msg("saved");
+      else msg("save error: " + (j && j.error || r.statusText), false);
+    } catch(e){ console.error(e); msg("save error", false); }
+  };
+
+  $("#clear").onclick = () => { $("#editor").innerHTML = ""; };
+
+  (function init(){
+    const t = localStorage.getItem("cmsToken");
+    if (t) $("#token").value = t;
+    $("#load").click();
+  })();
+  </script>
+</body>
+</html>
